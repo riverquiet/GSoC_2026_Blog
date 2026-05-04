@@ -1,0 +1,4 @@
+[book]
+title = "RTEMS CAN Stack Improvement: D-CAN Driver Implementation on BeagleBone Black"
+authors = ["Ning Zhang"]
+language = "en"

@@ -2,3 +2,6 @@
 title = "RTEMS CAN Stack Improvement: D-CAN Driver Implementation on BeagleBone Black"
 authors = ["Ning Zhang"]
 language = "en"
+[output.html.fold]
+enable = true      # open fold
+level = 1          # auto open to level

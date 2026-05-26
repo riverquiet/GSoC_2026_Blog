@@ -10,6 +10,8 @@
 
 - [Initial Setup](./implementation/initial_setup.md)
 
+- [Quick Reference](./implementation/quick_reference.md)
+
 - [Coding Start](./implementation/coding_start.md)
     - [week_1](./implementation/week1.md)
         - [TFTP boot Workflow 5/26](./implementation/tftpboot.md)

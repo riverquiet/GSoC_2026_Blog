@@ -8,5 +8,5 @@
 
 ## May 26th
 
-RTEMS BBB TFTP Boot Workflow Simplified Main Flow version and details can be seen in this blog.  
+RTEMS BBB TFTP Boot Workflow Simplified Main Flow version and details can be seen in this blog. Unfold week_1 tab will details.  
 * [Booting via Network](https://docs.rtems.org/docs/main/user/bsps/arm/beagle.html)

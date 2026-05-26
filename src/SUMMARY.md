@@ -12,6 +12,7 @@
 
 - [Coding Start](./implementation/coding_start.md)
     - [week_1](./implementation/week1.md)
+        - [Tftpbboot Workflow 5/26](./implementation/tftpboot.md)
     - [week_2](./implementation/week2.md)
     - [week_3](./implementation/week3.md)
     - [week_4](./implementation/week4.md)

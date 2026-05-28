@@ -13,4 +13,4 @@ RTEMS BBB TFTP Boot Workflow Simplified Main Flow version and details can be see
 
 
 ## May 27
-* DCAN initial test, try and learn the registers in DCAN. I was reading the Technicial Reference Mannual for several days and feel confused.Until the mentor said try it and commit it every day in Gitlab. That is a good way to learn. Do it and learn from doing. Mere reading helps little. Unfold week_1 tab will see details.
+* DCAN initial test, try and learn the registers in DCAN. I was reading the Technicial Reference Mannual for several days and feel confused.Until the mentor said try it and commit it every day in Gitlab. That is a good way to learn. Do it and learn from doing. Mere reading helps little. Avoid **Paralysis by analysis** Unfold week_1 tab will see details.

@@ -134,15 +134,8 @@ arm-rtems7-objcopy hello_dcan.exe \
 
 gzip -9 app.bin
 
-mkimage \
-  -A arm \
-  -O linux \
-  -T kernel \
-  -a 0x80800000 \
-  -e 0x80800000 \
-  -n RTEMS \
-  -d app.bin.gz \
-  rtems-app.img
+mkimage -A arm -O linux -T kernel -a 0x80000000 -e 0x80000000 -n RTEMS -d app.bin.gz rtems-app.img
+
 ```
 
 ---

@@ -4,9 +4,9 @@
 
 ## Overview
 
-This week focused on moving from Message Object configuration toward actual CAN transmission bring-up on the AM335x D-CAN controller.
+Last week I focused on learning Message Object configuration, this week will toward test CAN transmission bring-up on the AM335x D-CAN controller.
 
-After successfully configuring and reading back a transmit Message Object, I began testing the transmission path. Although transmission requests could be issued, no CAN frames appeared on the external bus. To isolate the problem, I validated the hardware path under Linux, determined the correct controller clock frequency, and updated the CAN bit timing configuration.
+I configuring and reading back a transmit Message Object, I began testing the transmission path. Although transmission requests could be issued, the TXRQ register still return 0. Maybe the register address is wrong. To move forware, this week will focus on hardware test. To isolate the problem, I validated the hardware path under Linux, determined the correct controller clock frequency, and updated the CAN bit timing configuration.
 
 ---
 
@@ -45,32 +45,6 @@ CANable Adapter
  ↓
 Linux SocketCAN
 ```
-
-Commands:
-
-```bash
-sudo ip link set can1 up type can bitrate 125000
-sudo ip link set can0 up type can bitrate 125000
-
-candump can0
-cansend can1 123#1122334455667788
-```
-
-Result:
-
-```text
-can0 123 [8] 11 22 33 44 55 66 77 88
-```
-
-This confirmed that:
-
-- The AM335x DCAN controller was functional
-- The CAN transceiver was operating correctly
-- Bus wiring and termination were correct
-- The CANable adapter was functioning properly
-- Linux SocketCAN was configured correctly
-
-The successful test narrowed the remaining issue to the RTEMS software bring-up path.
 
 ---
 

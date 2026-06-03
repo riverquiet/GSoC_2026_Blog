@@ -19,6 +19,7 @@
         - [DCAN registers trying and learning 5/27](./implementation/week1/learn_register.md)
         - [Bring up DCAN 5/28,29](./implementation/week1/bringup_dcan.md)
     - [week_2](./implementation/week2/week2.md)
+        - [USB to CAN validation 6/3](./implementation/week1/USBtoCAN_validation.md)
     - [week_3](./implementation/week3.md)
     - [week_4](./implementation/week4.md)
     - [week_5](./implementation/week5.md)

@@ -1,10 +1,28 @@
-# Linux SocketCAN Hardware Validation for AM335x DCAN1
+# Linux SocketCAN Hardware Validation for AM335x DCAN1 (BeagleBone Black Linux → UTM Linux via CANable)
 
 ## Objective
 
 Before continuing RTEMS D-CAN driver bring-up, validate that the external CAN hardware path is functioning correctly.
 
 The goal is to determine whether communication issues originate from hardware or from the RTEMS software stack.
+
+---
+
+## Test Environment
+
+### Transmitter
+
+- BeagleBone Black
+- Debian Linux
+- AM335x DCAN1 controller
+- External CAN transceiver
+
+### Receiver
+
+- UTM Virtual Machine
+- Debian Linux
+- CANable USB-to-CAN adapter
+- Linux SocketCAN tools
 
 ---
 
@@ -21,9 +39,7 @@ P9.26 -> DCAN1_RX
 
 Connected to an external CAN transceiver.
 
-### USB-to-CAN Adapter
-
-CANable adapter connected to a Linux virtual machine.
+### CANable USB-to-CAN Adapter
 
 Connections:
 
@@ -61,10 +77,55 @@ CAN Bus
     ↓
 CANable USB-to-CAN Adapter
     ↓
+UTM Linux VM
+    ↓
 Linux SocketCAN
     ↓
 candump
 ```
+
+---
+
+## Connecting CANable to UTM Linux
+
+Initially, the CANable device did not appear inside the Linux virtual machine.
+
+Checking available interfaces:
+
+```bash
+ip link
+```
+
+No CAN interface was present.
+
+### Root Cause
+
+The USB device was attached to macOS instead of the UTM virtual machine.
+
+### Solution
+
+In UTM:
+
+```text
+UTM
+ └─ USB Devices
+     └─ Connect
+         └─ canable gs_usb
+```
+
+After attaching the device to the VM:
+
+```bash
+ip link
+```
+
+Result:
+
+```text
+can0
+```
+
+The CANable adapter was successfully detected by Linux.
 
 ---
 
@@ -83,7 +144,7 @@ Enable CAN interface:
 sudo ip link set can1 up type can bitrate 125000
 ```
 
-Verify interface:
+Verify:
 
 ```bash
 ip -details link show can1
@@ -91,7 +152,7 @@ ip -details link show can1
 
 ---
 
-## Configure Linux SocketCAN
+## Configure UTM Linux SocketCAN
 
 Bring up the CANable interface:
 
@@ -109,13 +170,13 @@ ip -details link show can0
 
 ## Monitor CAN Traffic
 
-Start CAN frame monitoring:
+Start monitoring CAN frames:
 
 ```bash
 candump can0
 ```
 
-Terminal waits for incoming frames.
+The terminal waits for incoming frames.
 
 ---
 
@@ -140,10 +201,10 @@ DLC = 8
 
 ## Observed Result
 
-Linux SocketCAN successfully received:
+UTM Linux successfully received:
 
 ```text
-can0  123   [8]  11 22 33 44 55 66 77 88
+can0 123 [8] 11 22 33 44 55 66 77 88
 ```
 
 ---
@@ -157,7 +218,7 @@ The successful transmission confirms:
 - CAN bus wiring is correct
 - Bus termination is correct
 - CANable adapter is operational
-- USB passthrough is functioning correctly
+- UTM USB passthrough is functioning correctly
 - Linux SocketCAN configuration is correct
 - 125 kbps communication is working
 
@@ -177,4 +238,4 @@ The validation significantly reduced the debugging scope and ultimately helped i
 
 When performing embedded driver bring-up, validating the hardware path independently can save significant debugging time.
 
-By proving that the CAN controller, transceiver, bus, and monitoring tools work correctly under Linux, remaining failures can be isolated to software configuration issues rather than hardware faults.
+By proving that the CAN controller, transceiver, bus, CANable adapter, UTM USB passthrough, and SocketCAN tools all work correctly under Linux, remaining failures can be isolated to software configuration issues rather than hardware faults.

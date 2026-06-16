@@ -22,7 +22,7 @@
         - [USB to CAN validation 6/3](./implementation/week2/USBtoCAN_validation.md)
         - [Functional Driver Bringup 6/4](./implementation/week2/functional_driver_bringup.md)
         - [Driver understanding 6/5](./implementation/week2/driver_intro.md)
-    - [week_3](./implementation/week3.md)
+    - [week_3](./implementation/week3/week3.md)
     - [week_4](./implementation/week4.md)
     - [week_5](./implementation/week5.md)
     - [week_6](./implementation/week6.md)

@@ -1,8 +1,8 @@
-# From a very beginner, what is a driver? how to write a driver? for example as RTEMS BBB DCAN driver implementation
+# What Is a Driver? A Beginner's Journey Through an RTEMS BeagleBone Black D-CAN Driver
 
 ## Overview
 
-I got my master's degree in EE but I had never written a driver and the "driver" was a mysterious word to me. Thanks to the RTEMS project and mentors' guidance, I brought up a minimum driver that can successfully send and receive can frames. This blog is not a tutorial from an expert. It is simply a beginner's notes, recording how I gradually understood what a driver is and how to write one. Hopefully it can help another beginner get started more easily.
+I got my master's degree in EE but I had never written a driver and the "driver" was a mysterious word to me. Thanks to the RTEMS project and mentors' guidance, I brought up a minimum driver that can successfully send and receive can frames between BBB and Linux. This blog is not a tutorial from an expert. It is simply a beginner's notes, recording how I gradually understood what a driver is and how to write one. Hopefully it can help another beginner get started more easily.
 
 About project. RTEMS has a state-of-art CAN stack, but it doesn't support the hardware BeagleBone Black(BBB) yet. My goal is to write a driver that enables RTEMS to use the DCAN controller in BBB.
 
@@ -13,7 +13,7 @@ I use a analogy to help me understand "driver". Driver is a bridge between opera
 Since a driver is the bridge of software and hardware, it needs to communicate with both sftware--RTESM, and hardware--BeagleBone Black DCAN controller.  
 That said the driver needs to have RTESM API and the register address.
 
-For the software side, with RTEMS, need to know how to use the CAN API, [RTEMS CAN Driver](https://docs.rtems.org/docs/main/bsp-howto/can.html#registering-can-bus).  
+For the software side, with RTEMS, we need to know how to use the CAN API, [RTEMS CAN Driver link](https://docs.rtems.org/docs/main/bsp-howto/can.html#registering-can-bus).  
 This is the part I am going to work on next and will update later.
 
 For the hardware side, we need to understand how the CAN controller works, which means to read the Technical Reference Manual, to understand the logic of the hardware. In the driver, we will map the address of the register and writing codes to read or write values to these registers, and then achieve the function of driver.
@@ -60,11 +60,11 @@ If Linux can successfully send and receive CAN frames, then I know:
 - USB CAN adapter works
 - SocketCAN configuration works
 
-At that point, the hardware becomes a pair of swimming floats. I don't have to worry about drowning while learning the software. The debugging scope becomes much smaller.
+At that point, the hardware becomes a pair of swimming floats. I can learn and grow with a solid hardware foundation. The debugging scope becomes much smaller.
 
 ### BBB TFTP Ethernet Boot 
 I first tried to flash SD card to boot on BBB. It works, but it is just very slow. Then learned from mentors that TFTP boot is a more efficient way.  
-I built a TFTP connection between BBB and my computer through a Ethernet cable. I used TFTP to transfer the image file from my computer to BBB to test.
+I built a TFTP connection between BBB and my computer through a Ethernet cable. I used TFTP to transfer the image file from my computer to BBB to test.[Booting via Network](https://docs.rtems.org/docs/main/user/bsps/arm/beagle.html)
 
 ### UART serial
 The results on BBB needs to be seen. One way is connecting a monitor. Another is use a UART serial device.  
@@ -100,7 +100,7 @@ At first I thought I was writing a driver. Actually I was solving one very small
 
 ### Registers Became Less Scary
 
-At first, seeing names like
+At first, seeing names like these felt overwhelming.
 
 ```
 DCAN_CTL
@@ -110,21 +110,19 @@ DCAN_IFARB
 DCAN_IFMCTL
 ```
 
-felt overwhelming.
-
-After debugging for a while, I realized: Registers are simply variables inside hardware.
-
+After debugging for a while, I realized: Registers are simply variables inside hardware.  
 Reading DCAN_ES is similar to reading a C variable.  
 Writing DCAN_BTR = value is similar to assigning a value.  
 The only difference is that these variables live inside hardware instead of RAM.
 
+And when I don't know what is the meaning of the register, it is the time to go back to learn TRM. All registers information are in TRM.
 ---
 
 ### TX and RX Are Independent Milestones
-
+#### TX
 The first successful transmission was exciting.
 ```
-RTEMS BBB - CAN Bus - UTM Linux
+RTEMS BBB -> CAN Bus -> UTM Linux
 ```
 
 Linux successfully received
@@ -132,19 +130,18 @@ Linux successfully received
 ```
 123 [8] 11 22 33 44 55 66 77 88
 ```
-
-At that moment I thought the driver was almost finished. Then RX debugging started. NWDAT never changed. RXOK worked.  
+#### RX
+```
+UTM Linux -> CAN Bus -> RTEMS BBB  
+```
+RX debugging takes longer time. I found NWDAT register value never changed, but during the test, RXOK worked, which means a new frame come to the CAN Bus. So I use RXOK as a flag to read the value from message object RAM and in polling mode it worked. Then I tried to read the value of messagae object based on interrupt, which is a normal way in a driver.  
 Finally I switched to polling the DCAN_INT register and successfully detected:
 
 ```
 DCAN_INT = 0x00000002
 ```
 
-which means
-
-```
-Message Object 2 generated an interrupt.
-```
+which means Message Object 2 generated an interrupt.
 
 Reading Message Object 2 produced
 
@@ -162,7 +159,7 @@ Every debugging step improved my understanding of how the controller actually wo
 ---
 
 ### Ask mentors for resources
-For the project of writing a driver, usually it is not a new thing in this world. Maybe just only new to me. So one thing I learned is there are many resources related the work I am going to do. Do not think you are all alone and build all the things from scratch. There are lots of resources and support. If you cannot find the information, ask your mentors. I reallt appreciate my mentors for providing me many useful resources that helped me have a good start.
+For the project of writing a driver, usually it is not a new thing in this world. Maybe just only new to beginner. So one thing I learned is, there are many resources related the work I am going to do. Do not think you are all alone and build all the things from scratch. There are lots of resources and support. If you cannot find the information, ask your mentors. I really appreciate my mentors for providing me many useful resources that helped me have a good start.
 
 ### Learn by Building
 
@@ -176,7 +173,7 @@ RXOK
 DCAN_INT
 ```
 
-looked complicated. After implementation:
+looked complicated. After implementation knowledge became much more intuitive.
 
 ```
 CAN frame arrives -
@@ -185,8 +182,6 @@ DCAN_INT points to Message Object 2 -
 Driver reads Message Object -
 Software gets CAN frame
 ```
-
-Everything suddenly became much more intuitive.
 
 ---
 
@@ -204,10 +199,12 @@ The current driver can already transmit and receive CAN frames. The next goals a
 - convert hardware frames into software structures,
 - integrate with the RTEMS CAN stack.
 
-The driver is still under development. But the biggest change is probably not in the code. It is that the word **"driver"** is no longer mysterious.
+The driver is still under development. But the biggest change is through step by step development, the word **"driver"** is no longer mysterious.
 
 ---
 
 ## Final Thoughts
 
-As beginners, we often feel we need to understand everything before starting. My experience is exactly the opposite. Start building. Read when necessary. Debug patiently. Repeat. Driver development is not about knowing everything. It is about solving one small problem after another until the hardware finally responds. And when the first CAN frame appears on the screen, all those registers suddenly become much friendlier.
+As beginners, we often feel we need to understand everything before starting. My experience is exactly the opposite.  
+Start building. Read when necessary. Debug patiently. Repeat.  
+Driver development is not about knowing everything. It is about solving one small problem after another until the hardware finally responds. And when the first CAN frame appears on the screen, all those registers suddenly become much friendlier.

@@ -1,6 +1,6 @@
 # RTEMS BBB D-CAN Development Quick Reference
 
-# 0 quick command
+# quick commands
 Convert it into a bootable U-Boot image:
 
 ```bash

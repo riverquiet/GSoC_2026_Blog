@@ -1,5 +1,43 @@
 # RTEMS BBB D-CAN Development Quick Reference
 
+# 0 quick command
+Convert it into a bootable U-Boot image:
+
+```bash
+arm-rtems7-objcopy hello_dcan.exe \
+  -O binary app.bin
+
+gzip -9 app.bin
+```
+
+```bash
+
+mkimage -A arm -O linux -T kernel -a 0x80000000 -e 0x80000000 -n RTEMS -d app.bin.gz rtems-app.img
+
+```
+
+**In U-Boot**:  
+BBB U-Boot configuration:
+
+```bash
+setenv ipaddr 192.168.5.4
+setenv serverip 192.168.5.1
+```
+Transfer files:
+```bash
+tftpboot 0x80800000 rtems-app.img
+```
+
+```bash
+tftpboot 0x88000000 am335x-boneblack.dtb
+```
+
+Run:
+
+```bash
+bootm 0x80800000 - 0x88000000
+```
+
 # 1. Build Workflow
 
 ## Build RTEMS application

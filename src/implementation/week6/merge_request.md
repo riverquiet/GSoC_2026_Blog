@@ -1,51 +1,65 @@
 # RTEMS Merge Request Preparation Notes
 
-## 1. Understand the Git Structure
+## 1. Repositories
 
 I have three repositories:
 
 ```text
 upstream = Official RTEMS repository
-
-origin = My fork on GitLab
-
-local = My local repository on my computer
+origin   = My fork on GitLab
+local    = My local repository on my computer
 ```
 
-Current relationship:
+Important idea:
 
 ```text
-upstream/main
-        │
-        ▼
-local main
-        │
-        ▼
-origin/main
+Most Git work happens in local repository.
+GitLab fork is mainly a remote backup and a place to create Merge Requests.
 ```
 
-My `main` branch should always be the same as the official RTEMS `main`.
+---
+
+## 2. Relationship Between Repositories
+
+To update my main branch:
+
+```text
+Official RTEMS upstream/main
+        ↓ git pull upstream main
+Local main
+        ↓ git push origin main
+My fork origin/main
+```
+
+So local is the middle step.
+
+This is different from my first feeling. I thought the fork was the middle step, but actually Git works mainly from the local repository.
 
 ---
 
-# 2. Purpose of Each Branch
+## 3. Branch Purpose
 
-## main
+### main
 
-- Only synchronize with the official RTEMS repository.
-- Never develop new features here.
+`main` should stay clean.
 
-## bbb-dcan-driver
+It is only used to synchronize with official RTEMS.
 
-- My development branch.
-- All DCAN driver development should be here.
-- The Merge Request (MR) will be created from this branch.
+Do not develop DCAN code on `main`.
+
+### bbb-dcan-driver
+
+This is my development branch.
+
+All DCAN driver code should be added here.
+
+The Merge Request will be created from this branch.
 
 ---
 
-# 3. Update Main Before Development
+## 4. Updating Main
 
-If RTEMS official repository has new commits:
+Before starting serious work or before creating an MR:
 
 ```bash
 git checkout main
@@ -56,38 +70,40 @@ git push origin main
 Meaning:
 
 ```text
-Official RTEMS
-      │
-      ▼
+Official RTEMS main
+        ↓
 Local main
-      │
-      ▼
+        ↓
 My fork main
 ```
 
-Now all three `main` branches are synchronized.
+After this:
+
+```text
+upstream/main = local main = origin/main
+```
 
 ---
 
-# 4. Check My Development Branch
+## 5. Check Development Branch
 
-Switch to my branch.
+Switch to the branch:
 
 ```bash
 git checkout bbb-dcan-driver
 ```
 
-Check the history.
+Check history:
 
 ```bash
 git log --oneline --decorate --graph --all --max-count=20
 ```
 
-There are two possible situations.
+There are two situations.
 
 ---
 
-# Case 1 — No Development History
+## 6. Case 1 — Branch Has No Development History
 
 Example:
 
@@ -100,26 +116,25 @@ bbb-dcan-driver
             C
 ```
 
-or
+or I see something like:
 
 ```text
-HEAD -> bbb-dcan-driver
-main
-origin/main
-upstream/main
+HEAD -> bbb-dcan-driver, main, origin/main, upstream/main
 ```
 
 This means:
 
-- The branch exists.
-- But there are no commits on this branch.
-- It is exactly the same as `main`.
+```text
+The branch exists,
+but it is the same as main.
+There are no DCAN commits yet.
+```
 
 ### What to do
 
 No rebase is needed.
 
-Simply copy my tested DCAN driver from my testing repository into this repository.
+Just copy the tested DCAN driver code from my testing repository into this official fork repository.
 
 Then:
 
@@ -130,41 +145,54 @@ git commit -m "can/dcan: Add AM335x DCAN driver"
 git push origin bbb-dcan-driver
 ```
 
+This sends my local development branch to my fork:
+
+```text
+Local bbb-dcan-driver
+        ↓ git push origin bbb-dcan-driver
+Fork bbb-dcan-driver
+```
+
 ---
 
-# Case 2 — Development History Exists
+## 7. Case 2 — Branch Already Has Development History
 
 Example:
 
 ```text
 main
-
 A --- B --- C
 
-               \
-bbb-dcan-driver D --- E --- F
+bbb-dcan-driver
+            \
+             D --- E --- F
 ```
 
 D, E, and F are my DCAN commits.
 
-If RTEMS adds new commits:
+If official RTEMS adds new commits:
 
 ```text
 Official main
-
 A --- B --- C --- G --- H
 ```
 
-My branch is now based on an old version.
+Then I should update main first:
 
-I should rebase.
+```bash
+git checkout main
+git pull upstream main
+git push origin main
+```
+
+Then rebase my development branch:
 
 ```bash
 git checkout bbb-dcan-driver
 git rebase main
 ```
 
-Now it becomes
+After rebase:
 
 ```text
 A --- B --- C --- G --- H --- D --- E --- F
@@ -175,121 +203,203 @@ If there are conflicts:
 ```bash
 git status
 
-# Fix the conflicts
+# fix conflict files manually
 
-git add <files>
-
+git add <fixed-files>
 git rebase --continue
 ```
 
-Finally:
+After rebase, push the branch again:
 
 ```bash
 git push origin bbb-dcan-driver --force-with-lease
 ```
 
----
-
-# 5. Why Rebase?
-
-Rebase moves my commits onto the newest RTEMS main.
-
-This keeps my Merge Request clean.
-
-The reviewers only see my DCAN changes.
+`--force-with-lease` is needed because rebase rewrites branch history.
 
 ---
 
-# 6. Copy Driver from Testing Repository
+## 8. Why Rebase?
 
-My current DCAN driver is developed in another testing repository.
+Rebase moves my DCAN commits onto the newest RTEMS main.
+
+This keeps the Merge Request clean.
+
+The reviewers should only see my DCAN changes, not unrelated old main differences.
+
+---
+
+## 9. Copy Driver From Testing Repository
+
+My current DCAN driver was developed in another testing repository.
 
 The official RTEMS fork is clean.
 
-The next step is:
+Next step:
 
-- Copy the driver into the official RTEMS repository.
-- Follow the newest directory layout.
+```text
+1. Switch to bbb-dcan-driver
+2. Copy DCAN code into the correct RTEMS path
+3. Clean the code
+4. Build and test
+5. Commit
+6. Push branch to fork
+7. Create MR
+```
 
-For example:
+Mentor suggested the new CAN controller location should be:
 
 ```text
 bsps/shared/dev/can/dcan/
 ```
 
-This follows my mentor's suggestion.
+Example files:
+
+```text
+bsps/shared/dev/can/dcan/dcan.c
+bsps/shared/dev/can/dcan/dcan_regs.h
+```
+
+The exact header location should follow the new SJA1000 layout.
 
 ---
 
-# 7. Create Merge Request
+## 10. Push Branch to Fork
 
-After testing:
+After I commit locally:
 
 ```bash
-git status
-git add .
-git commit -m "can/dcan: Add AM335x DCAN driver"
 git push origin bbb-dcan-driver
 ```
 
-Then create a Merge Request.
-
-Source:
+Meaning:
 
 ```text
-River/rtems
-bbb-dcan-driver
+Local bbb-dcan-driver
+        ↓
+Fork bbb-dcan-driver
 ```
 
-Target:
+Now GitLab can create a Merge Request from my fork branch.
+
+---
+
+## 11. Create Merge Request
+
+The MR direction is:
 
 ```text
-rtems/rtos/rtems
-main
+Fork bbb-dcan-driver
+        ↓ Create Merge Request
+Official RTEMS main
+```
+
+It is NOT:
+
+```text
+Fork bbb-dcan-driver
+        ↓
+Fork main
+```
+
+The source branch is my fork branch:
+
+```text
+River/rtems:bbb-dcan-driver
+```
+
+The target branch is official RTEMS main:
+
+```text
+rtems/rtos/rtems:main
+```
+
+So the contribution flow is:
+
+```text
+Local branch
+        ↓ push
+Fork branch
+        ↓ Merge Request
+Official RTEMS main
 ```
 
 ---
 
-# 8. Code Cleanup Before MR
+## 12. Full Development Cycle
 
-Before submitting:
+```text
+Official RTEMS main
+        ↓ pull
+Local main
+        ↓ push
+Fork main
 
-- Remove temporary debug code.
-- Remove unnecessary `printf()`.
-- Remove commented-out code.
-- Remove duplicated functions.
-- Follow RTEMS coding style.
-- Add Doxygen comments.
-- Use timeout instead of infinite busy waiting.
-- Organize functions in a logical order.
-- Keep only necessary comments.
+Local bbb-dcan-driver
+        ↓ commit
+Local bbb-dcan-driver
+        ↓ push
+Fork bbb-dcan-driver
+        ↓ Create Merge Request
+Official RTEMS main
+```
 
 ---
 
-# 9. Simple Summary
+## 13. Code Cleanup Before MR
+
+Before submitting the MR:
+
+```text
+Remove temporary debug code
+Remove unnecessary printf()
+Remove commented-out code
+Remove duplicated functions
+Remove old fixed TX test functions
+Remove old callback path if queue path works
+Use timeout instead of infinite busy wait
+Follow RTEMS/SJA1000 coding style
+Add useful Doxygen comments
+Organize function order
+Keep only necessary comments
+```
+
+The first MR should focus on the basic DCAN driver:
+
+```text
+clock / pinmux
+bit timing
+start / stop
+RX interrupt path
+TX queue path
+worker
+driver initialization
+```
+
+IF3 polling/debug code should probably be left for a later MR.
+
+---
+
+## 14. Simple Summary
 
 ```text
 main
 ↓
-Always synchronize with official RTEMS.
+Only sync with official RTEMS.
 
 bbb-dcan-driver
 ↓
-Develop the DCAN driver.
+Develop DCAN driver here.
 
-No commits on branch
+If branch has no commits
 ↓
-Copy code directly.
-No rebase.
+Copy code, commit, push. No rebase.
 
-Has commits on branch
+If branch has commits
 ↓
-Update main.
-Rebase.
-Continue development.
+Update main, rebase branch, push with --force-with-lease.
 
-Test.
-Commit.
-Push.
-Create Merge Request.
+MR direction
+↓
+Fork branch → Official RTEMS main.
 ```

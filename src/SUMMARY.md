@@ -34,6 +34,7 @@
     - [week_10](./implementation/week10.md)
     - [week_11](./implementation/week11.md)
     - [week_12](./implementation/week12.md)
+        - [TX priority](./implementation/week12/TX priority.md)
 
 # Evaluation
 

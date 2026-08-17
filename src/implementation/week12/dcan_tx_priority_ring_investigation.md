@@ -9,18 +9,23 @@ The RTEMS CAN stack can provide multiple software TX queues with
 different priority classes. The driver retrieves the oldest frame from
 the highest-priority active queue by calling:
 
-```c rtems_can_queue_test_outslot(qends, &qedge, &slot); ```
+```c 
+rtems_can_queue_test_outslot(qends, &qedge, &slot); 
+```
 
 The returned `qedge->edge_prio` tells the driver which RTEMS CAN
 queue priority class the frame belongs to.
 
 For the current experiment, three RTEMS CAN priority classes are used:
 
-```text priority 2: high priority 1: middle priority 0: low ```
+```text 
+priority 2: high priority 1: middle priority 0: low 
+```
 
 The DCAN TX Message Objects are divided into three fixed groups:
 
-```text RTEMS priority 2 -> MO9 / MO10 RTEMS priority 1 -> MO11 /
+```text 
+RTEMS priority 2 -> MO9 / MO10 RTEMS priority 1 -> MO11 /
 MO12 RTEMS priority 0 -> MO15 / MO16 / MO17 / MO18
 ```
 

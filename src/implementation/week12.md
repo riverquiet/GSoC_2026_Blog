@@ -1,17 +1,20 @@
-GSoC 2026 RTEMS DCAN Driver Development — Week 12
+# GSoC 2026 RTEMS DCAN Driver Development — Week 12
 
-Week 12 — CAN-ID Based TX Priority Window
+## Week 12 — CAN-ID Based TX Priority Window
 
-New Design Goal
+### New Design Goal
 
-The mentor clarified that TX priority should follow the CAN arbitration identifier:
+After the first TX preemption implementation in Week 11, my mentor clarified that TX priority should follow the **CAN arbitration identifier**:
 
-A lower CAN ID has higher transmission priority.
+> **A lower CAN ID has higher transmission priority.**
 
-Therefore, the four DCAN TX Message Objects should be treated as a fixed-size ordered hardware window.
+Therefore, the four DCAN TX Message Objects should no longer be treated simply as independent TX buffers.
+
+Instead, they should be treated as a **fixed-size ordered hardware TX window**.
 
 The important invariant is:
 
+```text
 CAN_ID(MO9)
     <=
 CAN_ID(MO10)
@@ -19,158 +22,219 @@ CAN_ID(MO10)
 CAN_ID(MO11)
     <=
 CAN_ID(MO12)
+```
 
 For example:
 
+```text
 MO9  = 54
 MO10 = 55
 MO11 = 56
 MO12 = 57
+```
 
-If ID 49 arrives:
+If a new frame with CAN ID `49` arrives:
 
+```text
 49 < 54 < 55 < 56 < 57
+```
 
-The best four frames should stay in hardware:
+the best four frames should remain in hardware:
 
+```text
 MO9  = 49
 MO10 = 54
 MO11 = 55
 MO12 = 56
+```
 
-and the lowest-priority frame should return to the software queue:
+while the lowest-priority frame should return to the software queue:
 
+```text
 57 -> RTEMS TX queue
+```
 
-This is different from simply replacing one victim.
+This is different from the Week 11 design, which simply selected and replaced one victim Message Object.
 
-The driver now maintains a CAN-ID ordered TX hardware window.
+The new design maintains a **CAN-ID ordered TX hardware window**.
 
-Finding the Insertion Position
+---
 
-I added a helper that extracts the standard CAN identifier:
+## Finding the Insertion Position
 
+I added a helper function that extracts the standard CAN identifier from a frame:
+
+```c
 static uint32_t dcan_tx_frame_id(
   const struct can_frame *frame
 )
 {
   return frame->header.can_id & 0x7ffu;
 }
+```
 
-Then the driver scans the active TX window and finds where the new frame belongs.
+The driver then scans the active TX window and determines where the new frame belongs.
 
-Conceptually:
+For example:
 
-hardware:
+```text
+Hardware:
 54 55 57 60
 
-new:
+New:
 56
+```
 
-Comparison:
+The comparison becomes:
 
+```text
 56 < 54 ? no
 56 < 55 ? no
 56 < 57 ? yes
+```
 
 Therefore:
 
+```text
 first_index = 2
+```
 
-which corresponds to MO11.
+which corresponds to `MO11`.
 
-The driver only needs to reorder the affected suffix:
+Only the affected suffix needs to be reorganized:
 
+```text
 MO9  = 54    unchanged
 MO10 = 55    unchanged
 
 MO11 and MO12 must be reordered
+```
 
-Using strict < also keeps equal CAN IDs behind already queued frames, which helps preserve FIFO behavior for frames with the same identifier.
+Using a strict `<` comparison also keeps frames with equal CAN IDs behind frames that are already queued.
 
-Two Reorder Operations
+This helps preserve **FIFO behavior for frames with the same CAN identifier**.
+
+---
+
+## Two Reorder Operations
 
 I introduced two types of TX window reorganization:
 
+```c
 enum dcan_tx_reorder_type {
   DCAN_TX_REORDER_NONE = 0,
   DCAN_TX_REORDER_PREEMPT,
   DCAN_TX_REORDER_COMPACT
 };
+```
 
 They solve two different problems.
 
-1. PREEMPT
+### 1. PREEMPT
 
-This happens when a new higher-priority CAN frame needs to enter a full hardware TX window.
+`DCAN_TX_REORDER_PREEMPT` occurs when a new higher-priority CAN frame needs to enter a **full hardware TX window**.
 
-Example:
+For example:
 
+```text
+Hardware:
 54 55 57 60
-+
+
+New:
 56
+```
 
-Result:
+The desired result is:
 
+```text
+Hardware:
 54 55 56 57
 
-60 -> queue
+Software queue:
+60
+```
 
-2. COMPACT
+The new frame is inserted into the correct position, the affected frames are shifted, and the lowest-priority frame is returned to the RTEMS TX queue.
 
-This happens after an earlier Message Object finishes transmission and leaves a hole.
+### 2. COMPACT
 
-Example:
+`DCAN_TX_REORDER_COMPACT` occurs when an earlier Message Object finishes transmission and leaves a hole in the hardware window.
 
+For example:
+
+```text
 MO9  = free
 MO10 = 54
 MO11 = 55
 MO12 = 56
 
-queue:
+Software queue:
 57
+```
 
-If the driver simply fills MO9 with ID57, it would create:
+If the driver simply filled MO9 with ID `57`, the result would be:
 
+```text
 57 54 55 56
+```
 
 which breaks the hardware priority order.
 
-Instead, the driver compacts the existing frames:
+Instead, the driver first compacts the existing frames:
 
+```text
 54 -> MO9
 55 -> MO10
 56 -> MO11
+```
 
-and then fills the tail:
+leaving:
 
+```text
+MO9  = 54
+MO10 = 55
+MO11 = 56
+MO12 = free
+```
+
+The next queued frame can then safely fill the tail:
+
+```text
 57 -> MO12
+```
 
-Result:
+The final hardware window becomes:
 
+```text
 54 55 56 57
+```
 
-This keeps the hardware window ordered after every TX completion.
+This keeps the hardware window ordered after TX completion.
 
-Preemption State
+---
 
-The reorder process cannot happen in one instruction.
+## Reorder State
 
-The driver must:
+A reorder operation cannot be completed in a single instruction.
 
-detect reorder
-    |
-    v
-request hardware abort
-    |
-    v
-wait until TxRqst becomes 0
-    |
-    v
-rewrite Message Objects
+The driver must perform several steps:
+
+```text
+Detect reorder
+      |
+      v
+Request hardware abort
+      |
+      v
+Wait until TxRqst becomes 0
+      |
+      v
+Rewrite affected Message Objects
+```
 
 Therefore, I added state to remember the active operation:
 
+```c
 struct dcan_tx_reorder {
   bool active;
   enum dcan_tx_reorder_type type;
@@ -178,447 +242,593 @@ struct dcan_tx_reorder {
   struct rtems_can_queue_slot *new_slot;
   struct rtems_can_queue_edge *new_edge;
 };
+```
 
-This stores:
+This structure records:
 
-whether a reorder is active,
+- whether a reorder operation is active,
+- whether the operation is `PREEMPT` or `COMPACT`,
+- where the affected Message Object range begins,
+- the new queued frame waiting to enter the hardware window.
 
-whether it is PREEMPT or COMPACT,
+This allows the operation to continue safely across multiple TX worker iterations.
 
-where the affected range starts,
+---
 
-the new queued frame that is waiting to enter hardware.
+## Starting Priority Preemption
 
-Starting Priority Preemption
+When all TX Message Objects are occupied, the driver checks the next frame waiting in the RTEMS software TX queue.
 
-When all TX Message Objects are occupied, the driver checks the next software TX frame.
+Conceptually, the logic is:
 
-The logic is approximately:
-
+```text
 Is another reorder active?
-    |
-    yes -> wait
-
+        |
+     yes -> wait
+        |
+       no
+        v
 Are all four hardware TX buffers occupied?
-    |
-    no -> normal filling
-
+        |
+     no -> normal filling
+        |
+       yes
+        v
 Get next frame from RTEMS TX queue
-    |
-    v
+        |
+        v
 Find insertion index by CAN ID
+```
 
-If the new frame does not belong in the hardware window:
+If the new frame does not belong in the active hardware window:
 
+```text
 first_index == 4
+```
 
 it is simply returned to the software queue.
 
 For example:
 
-hardware:
+```text
+Hardware:
 49 54 55 56
 
-new:
+New:
 57
+```
 
-ID57 has lower priority than every active hardware frame:
+ID `57` has lower priority than every frame already in hardware.
 
+Therefore:
+
+```text
 first_index = 4
+```
 
-so no preemption is required.
+and no preemption is required.
 
-Aborting Only the Affected Suffix
+---
+
+## Aborting Only the Affected Suffix
 
 The new design does not always abort all four Message Objects.
 
-For:
+For example:
 
-54 56 57 60 + 55
+```text
+Hardware:
+54 56 57 60
 
-the insertion point is:
+New:
+55
+```
 
+The insertion point is:
+
+```text
 first_index = 1
+```
 
-so:
+Therefore:
 
+```text
 MO9 stays unchanged
-MO10-MO12 are affected
 
-For:
+MO10
+MO11
+MO12
+```
 
-54 55 57 60 + 56
+are the only affected Message Objects.
 
-the insertion point is:
+Similarly:
 
+```text
+Hardware:
+54 55 57 60
+
+New:
+56
+```
+
+produces:
+
+```text
 first_index = 2
+```
 
 so only:
 
-MO11-MO12
+```text
+MO11
+MO12
+```
 
 need to be stopped and rewritten.
 
-This reduces unnecessary hardware operations.
+This avoids unnecessary abort and rewrite operations on Message Objects that are already in the correct position.
 
-Waiting for Hardware Abort Completion
+---
+
+## Waiting for Hardware Abort Completion
 
 The driver does not assume that calling the abort function means the Message Object is immediately safe to rewrite.
 
-For every affected Message Object, it checks:
+For every affected Message Object, the driver checks:
 
+```text
 TxRqst == 0
+```
 
-Only after all requested aborts are complete does the driver mark the reorder as ready.
+Only after all requested aborts have completed does the driver mark the reorder operation as ready.
 
 The debug flow looks like:
 
+```text
 PREEMPT CHECK new_id=56 first_index=2
 PREEMPT START first_index=2
 REORDER READY type=1 first_index=2
+```
 
-This protects the driver from rewriting a Message Object while the controller still considers its transmission pending.
+This prevents the driver from rewriting a Message Object while the DCAN controller still considers its transmission pending.
 
-Completing the Ordered Insertion
+---
 
-Consider this test:
+## Completing the Ordered Insertion
 
+Consider the following test:
+
+```text
 MO9  = 54
 MO10 = 55
 MO11 = 57
 MO12 = 60
 
-new = 56
+New = 56
+```
 
-The driver saves the frame that will leave the window:
+The driver first saves the frame that will leave the hardware window:
 
+```text
 evicted = ID60
+```
 
-Then it shifts the affected frames from right to left:
+It then shifts the affected frames from right to left:
 
+```text
 MO12 <- old MO11 = 57
 MO11 <- new frame = 56
+```
 
 The final hardware window becomes:
 
+```text
 54 55 56 57
+```
 
-and:
+while:
 
+```text
 60 -> software queue
+```
 
-The shift is done from right to left because doing it from left to right could overwrite data that still needs to be moved.
+The shift is performed **from right to left**.
 
-Another important detail is that I move only the software ownership information:
+This is important because shifting from left to right could overwrite information that is still needed for the next move.
 
+---
+
+## Preserving Physical Message Object Identity
+
+Another important implementation detail is that I move only the software ownership information associated with a frame:
+
+```text
 slot
 edge
 priority
+```
 
-I do not copy the complete dcan_txb_info structure because mobj represents a physical hardware position:
+I do not copy the complete `dcan_txb_info` structure.
 
+The reason is that `mobj` represents a physical DCAN hardware position:
+
+```text
 txb_info[0].mobj = 9
 txb_info[1].mobj = 10
 txb_info[2].mobj = 11
 txb_info[3].mobj = 12
+```
 
-These hardware numbers must never move.
+These hardware Message Object numbers must remain fixed.
 
-TX Window Compaction
+Therefore, the driver moves the frame ownership information between TX buffer records while preserving the physical `mobj` identity of each buffer.
 
-After a frame finishes, the TX completion handler releases its queue slot.
+---
+
+## TX Window Compaction
+
+After a frame finishes transmission, the TX completion handler releases its RTEMS queue slot.
 
 For example:
 
-before:
+```text
+Before:
 49 54 55 56
+```
 
-49 finishes
+After ID `49` finishes:
 
-after completion:
+```text
 free 54 55 56
+```
 
-Before a normal queue refill, the driver checks whether there is a hole before another active TX frame.
+Before performing a normal queue refill, the driver checks whether there is a hole before another active TX frame.
 
 If there is, it starts:
 
+```text
 DCAN_TX_REORDER_COMPACT
+```
 
-The remaining frames are moved toward lower-numbered Message Objects:
+The remaining frames are moved toward the lower-numbered Message Objects:
 
+```text
 free 54 55 56
-    |
-    v
+       |
+       v
 54 55 56 free
+```
 
-Then the next software frame can safely fill the tail:
+The next software frame can then safely fill the tail:
 
+```text
 54 55 56 57
+```
 
-This solves the ordering problem I observed during earlier tests.
+This solves the ordering problem observed during the earlier multi-buffer TX tests.
 
-Updated TX Processing Order
+---
 
-The TX worker now conceptually processes TX work in this order:
+## Updated TX Processing Order
 
+The TX worker now conceptually processes TX work in the following order:
+
+```text
 1. Finish an active abort/reorder
 2. Compact a hardware window that contains a hole
 3. Fill normal free TX Message Objects
 4. Check whether a new queued frame should preempt the full window
+```
 
-This order is important.
+This ordering is important.
 
-If normal filling happened before compaction, a low-priority frame could enter an earlier Message Object and break CAN-ID ordering again.
+If normal filling occurred before compaction, a lower-priority frame could enter an earlier Message Object and break the CAN-ID ordering again.
 
-Week 12 Testing
+The driver therefore restores the hardware-window invariant before accepting additional frames.
 
-I changed the local test so that it tests actual CAN IDs instead of only RTEMS queue priorities.
+---
 
-All test software queues use the same RTEMS queue priority. This isolates CAN-ID scheduling from RTEMS software queue priority.
+## Week 12 Testing
 
-The payload also contains a sequence number so I can independently check:
+I changed the local test so that it tests actual **CAN IDs** instead of only RTEMS queue priorities.
 
-CAN ID -> priority behavior
+All test software queues use the same RTEMS queue priority.
+
+This isolates:
+
+```text
+CAN-ID scheduling
+```
+
+from:
+
+```text
+RTEMS software queue priority
+```
+
+The payload also contains a sequence number so that I can independently verify:
+
+```text
+CAN ID   -> priority behavior
 sequence -> frame identity, loss, or duplication
+```
 
-Test 1 — Front Insertion
+---
+
+## Test 1 — Front Insertion
 
 Initial hardware:
 
+```text
 54 55 56 57
+```
 
 New frame:
 
+```text
 49
+```
 
-Expected:
+Expected result:
 
+```text
 49 54 55 56
 
-57 -> queue
+57 -> software queue
+```
 
-Driver result:
+The driver reported:
 
+```text
 PREEMPT CHECK new_id=49 first_index=0
 PREEMPT START first_index=0
 REORDER READY type=1 first_index=0
 
 TX REORDER: MO9=49 MO10=54 MO11=55 MO12=56
 TX REQUEUE ID=57
+```
 
 Final receive order:
 
+```text
 49 54 55 56 57
+```
 
-Result:
+**Result: PASS**
 
-PASS
+This test verified insertion at the front of the hardware TX window.
 
-Test 2 — Middle Insertion
+---
+
+## Test 2 — Middle Insertion
 
 Initial hardware:
 
+```text
 54 56 57 60
+```
 
 New frame:
 
+```text
 55
+```
 
-Expected:
+Expected result:
 
+```text
 54 55 56 57
 
-60 -> queue
+60 -> software queue
+```
 
-Driver result:
+The driver reported:
 
+```text
 PREEMPT CHECK new_id=55 first_index=1
 PREEMPT START first_index=1
 REORDER READY type=1 first_index=1
 
 TX REORDER: MO9=54 MO10=55 MO11=56 MO12=57
 TX REQUEUE ID=60
+```
 
 Final receive order:
 
+```text
 54 55 56 57 60
+```
 
-Result:
+**Result: PASS**
 
-PASS
+This test proved that the driver can perform a **partial-range reorder** while keeping MO9 unchanged.
 
-This test proved that the driver can perform a partial-range reorder and keep MO9 unchanged.
+---
 
-Test 3 — Tail-Range Insertion
+## Test 3 — Tail-Range Insertion
 
 Initial hardware:
 
+```text
 54 55 57 60
+```
 
 New frame:
 
+```text
 56
+```
 
-Expected:
+Expected result:
 
+```text
 54 55 56 57
 
-60 -> queue
+60 -> software queue
+```
 
-Driver result:
+The driver reported:
 
+```text
 PREEMPT CHECK new_id=56 first_index=2
 PREEMPT START first_index=2
 REORDER READY type=1 first_index=2
 
 TX REORDER: MO9=54 MO10=55 MO11=56 MO12=57
 TX REQUEUE ID=60
+```
 
 Final receive order:
 
+```text
 54 55 56 57 60
+```
 
 Sequence order:
 
+```text
 100 101 1 102 103
+```
 
-Result:
-
-PASS
+**Result: PASS**
 
 The test also reported:
 
+```text
 unique original frames:       4/4
 every expected sequence once: yes
 invalid frames:               0
 error frames:                 0
+```
 
-This confirms that the reorder operation did not lose or duplicate any frame.
+This confirmed that the reorder operation did not lose or duplicate any frame.
 
-What I Learned
+---
 
-These three weeks helped me understand that TX scheduling is not only about putting frames into hardware.
+## What I Learned
 
-There are several layers that must stay consistent:
+The work from Weeks 10–12 helped me understand that TX scheduling is not only about putting frames into hardware.
 
+Several layers must remain consistent:
+
+```text
 RTEMS software TX queue
-        |
-        v
-queue slot / edge ownership
-        |
-        v
+          |
+          v
+Queue slot / edge ownership
+          |
+          v
 DCAN Message Object assignment
-        |
-        v
+          |
+          v
 TxRqst hardware state
-        |
-        v
+          |
+          v
 CAN arbitration priority
+```
 
 The biggest change in my understanding was moving from:
 
-"find one low-priority victim"
+> **"Find one low-priority victim."**
 
 to:
 
-"maintain an ordered hardware TX priority window"
+> **"Maintain an ordered hardware TX priority window."**
 
-This model makes the driver logic much easier to reason about.
+This model makes the driver behavior easier to reason about.
 
 The main invariant is now:
 
-occupied TX Message Objects should remain ordered
-from lower CAN ID to higher CAN ID
+> **Occupied TX Message Objects should remain ordered from lower CAN ID to higher CAN ID.**
 
-When a higher-priority frame arrives, the driver performs an ordered insertion.
+When a higher-priority frame arrives, the driver performs an **ordered insertion**.
 
-When a frame finishes and leaves a hole, the driver performs compaction.
+When a frame finishes and leaves a hole, the driver performs **compaction**.
 
-Together, these two operations keep the hardware window consistent with CAN arbitration priority.
+Together, these two operations keep the active hardware TX window consistent with the intended CAN-ID priority model.
 
-Current Status
+---
+
+## Current Status
 
 At the end of Week 12, the DCAN driver supports and has locally tested:
 
-multiple TX Message Objects,
-
-TX completion handling,
-
-TX abort using the correct DCAN TxRqst semantics,
-
-CAN-ID based priority comparison,
-
-priority insertion into a full TX hardware window,
-
-partial-range Message Object reordering,
-
-evicted frame return to the RTEMS software queue,
-
-post-completion TX window compaction,
-
-front insertion (first_index = 0),
-
-middle insertion (first_index = 1),
-
-tail-range insertion (first_index = 2),
-
-frame-loss and duplicate-frame checking.
+- Multiple TX Message Objects
+- TX completion handling
+- TX abort using the correct DCAN `TxRqst` semantics
+- CAN-ID based priority comparison
+- Priority insertion into a full TX hardware window
+- Partial-range Message Object reordering
+- Evicted frame return to the RTEMS software queue
+- Post-completion TX window compaction
+- Front insertion (`first_index = 0`)
+- Middle insertion (`first_index = 1`)
+- Tail-range insertion (`first_index = 2`)
+- Frame-loss and duplicate-frame checking
 
 The main tested example now behaves as expected:
 
+```text
 Initial:
+
 MO9  = 54
 MO10 = 55
 MO11 = 56
 MO12 = 57
 
 New high-priority frame:
+
 49
 
 After preemption:
+
 MO9  = 49
 MO10 = 54
 MO11 = 55
 MO12 = 56
 
 Software queue:
+
 57
+```
 
 This implementation is much closer to the intended DCAN TX priority scheduling behavior and addresses the main mentor feedback about TX priority preemption.
 
-Next Steps
+---
+
+## Next Steps
 
 The next step is to continue testing edge cases before cleaning the code for the merge request.
 
-Important remaining tests include:
+An important remaining case is:
 
-first_index = 3
+### `first_index = 3`
 
+```text
 Initial:
 54 55 56 60
 
 New:
 57
+```
 
-Expected:
+Expected result:
+
+```text
 54 55 56 57
 
-60 -> queue
+60 -> software queue
+```
 
 I also want to test:
 
-equal CAN IDs and FIFO behavior,
+- Equal CAN IDs and FIFO behavior
+- A new frame with lower priority than every hardware frame
+- Repeated preemptions
+- Preemption while TX completion interrupts are occurring
+- Heavier CAN bus load
+- Cleanup of temporary debug output
+- Final review of comments and error paths before upstream submission
 
-a new frame that has lower priority than every hardware frame,
-
-repeated preemptions,
-
-preemption while TX completion interrupts are occurring,
-
-heavier CAN bus load,
-
-cleanup of temporary debug output,
-
-final review of comments and error paths before upstream submission.
-
-The driver is now moving from basic functional support toward more robust scheduling behavior suitable for upstream review.
+The driver is now moving from basic functional TX support toward more robust scheduling behavior suitable for upstream review.

@@ -178,9 +178,7 @@ organization was improved based on mentor and merge-request feedback.
 
 The driver has been developed through the RTEMS GitLab review process.
 
--   **Merge request:** \[Add RTEMS GitLab merge request URL here\]
--   **Final GSoC commit:** \[Add final GSoC commit URL here\]
--   **Relevant source files:** \[Add final source links here\]
+-   **RTEMS merge request:** [RTEMS GitLab merge request](https://gitlab.rtems.org/rtems/rtos/rtems/-/merge_requests/1341)
 
 These links should be updated before this report is submitted as the
 official GSoC work product.
@@ -251,10 +249,10 @@ multi-Message-Object TX scheduling is left as future work.
 
 ## 10. Links
 
--   **GSoC project:** \[Add project URL\]
--   **RTEMS merge request:** \[Add merge request URL\]
--   **Final GSoC commit:** \[Add commit URL\]
--   **Test notes / blog posts:** \[Add links if available\]
+-   **GSoC project:** [GSoC Project Introduction](https://summerofcode.withgoogle.com/myprojects)
+-   **RTEMS merge request:** [RTEMS GitLab merge request](https://gitlab.rtems.org/rtems/rtos/rtems/-/merge_requests/1341)
+-   **Local Repo:** [Local Repo](https://gitlab.rtems.org/rtems/rtos/rtems/-/merge_requests/1341/commits)
+-   **Test notes / blog posts:** [Blog Posts](https://riverquiet.github.io/GSoC_2026_Blog/preface.html)
 
 ## 11. Acknowledgements
 

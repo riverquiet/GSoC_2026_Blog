@@ -8,8 +8,8 @@
 
 ## Link to My GSoC Work
 
-**Final work product:** \[Add final report URL here\]\
-**RTEMS merge request:** \[Add RTEMS GitLab merge request URL here\]
+**Final work product:** [Local Repo](https://gitlab.rtems.org/River/rtems-bbb-dcan)\
+**RTEMS merge request:** [RTEMS GitLab merge request](https://gitlab.rtems.org/rtems/rtos/rtems/-/merge_requests/1341)
 
 ## What I Completed
 

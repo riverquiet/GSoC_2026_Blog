@@ -35,6 +35,7 @@
     - [week_11](./implementation/week11.md)
     - [week_12](./implementation/week12.md)
         - [TX priority](./implementation/week12/TX_priority.md)
+        - [TX ring and priority](./implementation/week12/dcan_tx_priority_ring_investigation.md)
 
 # Evaluation
 

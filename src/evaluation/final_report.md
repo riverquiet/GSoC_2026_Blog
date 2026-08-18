@@ -85,8 +85,7 @@ The controller-stop path also cleans up pending transmissions.
 
 ### 3.7 DCAN0 and DCAN1
 
-The project initially focused on DCAN1. Later, support was extended so
-that DCAN0 and DCAN1 could both be registered and tested.
+Support was extended so that DCAN0 and DCAN1 could both be registered and tested.
 
 ## 4. TX Ordering Investigation
 
@@ -180,9 +179,6 @@ The driver has been developed through the RTEMS GitLab review process.
 
 -   **RTEMS merge request:** [RTEMS GitLab merge request](https://gitlab.rtems.org/rtems/rtos/rtems/-/merge_requests/1341)
 
-These links should be updated before this report is submitted as the
-official GSoC work product.
-
 ## 7. Challenges and Lessons Learned
 
 ### Understanding DCAN
@@ -246,6 +242,9 @@ controller lifecycle handling, and DCAN0/DCAN1 support.
 The current TX baseline uses one hardware TX Message Object and has
 verified same-priority FIFO ordering. More advanced priority-aware
 multi-Message-Object TX scheduling is left as future work.
+
+I plan to continue contributing to RTEMS and improving the driver based
+on upstream feedback.
 
 ## 10. Links
 

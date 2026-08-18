@@ -1,4 +1,4 @@
-# GSoC 2026 Final Evaluation Draft
+# GSoC 2026 Final Evaluation
 
 ## Project
 

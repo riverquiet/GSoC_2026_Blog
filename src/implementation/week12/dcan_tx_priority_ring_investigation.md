@@ -467,11 +467,10 @@ itself rather than timing changes caused by debug printing.
 
 After the two-object priority-ring design was working, the low-priority
 ring was expanded from two Message Objects to four:
-
+```
 p2 high -> MO9 / MO10
-
 p0 low  -> MO15 / MO16 / MO17 / MO18
-
+```
 The important design rule was kept unchanged:
 
 Increasing the ring size does not increase the number of
@@ -679,59 +678,308 @@ transmission-eligible at a time for each priority class, while
 additional occupied Message Objects can serve as prefetched cached
 frames.
 
-## 13. Current Conclusions
+## 13. Long-Run Same-Priority FIFO Stress Validation
+
+After the targeted FIFO and priority-bypass tests passed, a longer
+stress test was added using the mentor test's core idea: transmit a
+large sequence of frames, encode a sequence number into the payload, and
+verify the receive order explicitly.
+
+The test configuration was:
+
+``` text
+sender:              DCAN0 /dev/can0
+receiver:            DCAN1 /dev/can1
+CAN bitrate:         125000 bit/s
+fixed CAN ID:        0x600
+frames per test:     2000
+expected sequence:   0..1999
+burst size:          100
+burst delay:         1 ms
+TX ring trace:       disabled
+```
+
+The sequence number was stored in `data[0..3]`. The receiver
+reconstructed the sequence and compared every frame with the expected
+value. A fixed CAN ID was used deliberately so this experiment focused
+on driver ordering rather than CAN-ID arbitration.
+
+The long run repeatedly exercised `head`, `tail`, physical Message
+Object wrap-around, `ACTIVE -> DONE -> RETIRE`, `CACHED -> ACTIVE`, and
+refill from the RTEMS software queue.
+
+### 13.1 Priority 0: MO15-MO18
+
+``` text
+RTEMS queue priority: 0
+TX ring:              MO15-MO18
+ring size:            4
+sent frames:          2000
+received frames:      2000
+order errors:         0
+invalid frames:       0
+CAN error frames:     0
+timeout:              no
+verified sequence:    0..1999
+elapsed time:         1899282708 ns
+```
+
+Result: **PASS**
+
+### 13.2 Priority 1: MO11-MO14
+
+``` text
+RTEMS queue priority: 1
+TX ring:              MO11-MO14
+ring size:            4
+sent frames:          2000
+received frames:      2000
+order errors:         0
+invalid frames:       0
+CAN error frames:     0
+timeout:              no
+verified sequence:    0..1999
+elapsed time:         1899274708 ns
+```
+
+Result: **PASS**
+
+### 13.3 Priority 2: MO9-MO10
+
+``` text
+RTEMS queue priority: 2
+TX ring:              MO9-MO10
+ring size:            2
+sent frames:          2000
+received frames:      2000
+order errors:         0
+invalid frames:       0
+CAN error frames:     0
+timeout:              no
+verified sequence:    0..1999
+elapsed time:         1899186625 ns
+```
+
+Result: **PASS**
+
+### 13.4 Combined Result
+
+  ---------------------------------------------------------------------------
+  RTEMS      TX Message      Ring size        Frames  Order errors Result
+  priority   Objects                                               
+  ---------- ----------- ------------- ------------- ------------- ----------
+  p2         MO9-MO10                2          2000             0 PASS
+
+  p1         MO11-MO14               4          2000             0 PASS
+
+  p0         MO15-MO18               4          2000             0 PASS
+  ---------------------------------------------------------------------------
+
+The current variable-size priority-ring implementation therefore
+preserved same-priority FIFO ordering for all three RTEMS CAN queue
+priority classes under the tested long-run workload.
+
+This supports the current invariant:
+
+``` text
+Within one priority ring:
+
+at most one Message Object is ACTIVE
++
+remaining occupied Message Objects may be CACHED
++
+activation follows logical FIFO order
++
+retirement follows tail order
+```
+
+## 14. Interpretation of the Timing Results
+
+The total times were nearly identical:
+
+  Priority     Ring size    Elapsed time
+  ---------- ----------- ---------------
+  p0                   4   1.899282708 s
+  p1                   4   1.899274708 s
+  p2                   2   1.899186625 s
+
+These measurements do not show a meaningful throughput improvement from
+ring size 4 over ring size 2. That is consistent with the architecture
+because increasing ring size does not create more same-priority
+transmission candidates.
+
+``` text
+ring size 2:
+1 ACTIVE + up to 1 CACHED
+
+ring size 4:
+1 ACTIVE + up to 3 CACHED
+```
+
+The larger ring increases hardware-side prefetch/cache depth. Any
+performance benefit is therefore more likely to appear in
+completion-to-next-activation latency, inter-frame gap, worker
+scheduling sensitivity, CPU overhead, or burst absorption. The
+2000-frame experiment should primarily be treated as a correctness and
+stability test.
+
+## 15. Current Validated TX Architecture
+
+``` text
+RTEMS CAN TX queues
+        |
+        +-- priority 2 (high)
+        |       -> ring[2] -> MO9-MO10
+        |
+        +-- priority 1 (middle)
+        |       -> ring[1] -> MO11-MO14
+        |
+        +-- priority 0 (low)
+                -> ring[0] -> MO15-MO18
+```
+
+The scheduling path is:
+
+``` text
+RTEMS queue priority
+        |
+        v
+select priority ring
+        |
+        v
+prefetch frames into that ring
+        |
+        v
+only the oldest eligible frame becomes ACTIVE
+        |
+        v
+later frames remain CACHED
+        |
+        v
+TX completion
+        |
+        v
+tail-ordered retirement
+        |
+        v
+activate next cached frame
+```
+
+The architecture has now been validated in two complementary ways:
+
+1.  **Within-priority ordering:** p0, p1, and p2 each transmitted 2000
+    frames with zero ordering errors.
+2.  **Cross-priority bypass:** a later high-priority frame used its
+    reserved hardware ring and bypassed a low-priority backlog while the
+    low-priority stream remained FIFO-correct.
+
+The second property should be described as **priority bypass**, not
+frame preemption. CAN transmission itself remains non-preemptive.
+
+## 16. Why the Current Design Solves the Earlier Problems
+
+The earlier multi-MO design exposed several same-priority Message
+Objects as independent hardware transmission candidates. Once frames
+were distributed among them, software FIFO order was no longer
+sufficient to determine hardware transmission order. Observed patterns
+such as `0 2 1 3` demonstrated this problem.
+
+The current design instead preserves an explicit logical order:
+
+``` text
+head = next producer position
+tail = oldest frame not yet retired
+```
+
+It also separates Message Object state:
+
+``` text
+ACTIVE = eligible for hardware transmission
+CACHED = frame and RTEMS ownership are staged, but TxRqst is not yet eligible
+```
+
+Therefore, expanding a ring from two to four Message Objects increases
+staged frames without increasing same-priority hardware candidates.
+
+Resource partitioning also simplifies priority handling. Low-priority
+traffic cannot consume the Message Objects reserved for p1 or p2, so a
+later high-priority frame does not require moving, aborting, or
+reassigning low-priority RTEMS queue slots.
+
+## 17. Current Conclusions
 
 ### What did not work well
 
-Treating multiple DCAN TX Message Objects as unrelated free buffers did
-not preserve RTEMS software FIFO order automatically.
-
-A shared hardware pool also made high-priority insertion difficult
-because all hardware Message Objects could already be occupied by
-lower-priority traffic.
+-   Treating multiple DCAN TX Message Objects as unrelated free buffers
+    did not automatically preserve RTEMS software FIFO order.
+-   A shared hardware TX pool complicated later high-priority insertion
+    because lower-priority traffic could occupy the available hardware
+    resources.
 
 ### What worked better
 
-```text 
-fixed Message Object groups per software priority +
-independent TX ring per priority + explicit RTEMS queue-slot ownership +
-head/tail producer-consumer management + tail-ordered retirement 
+The successful experimental architecture combines:
+
+-   fixed Message Object groups for each RTEMS software priority;
+-   an independent TX ring for each priority;
+-   explicit RTEMS queue-slot ownership;
+-   logical `head`/`tail` producer-consumer management;
+-   one `ACTIVE` Message Object per priority ring;
+-   additional occupied Message Objects as `CACHED` frames;
+-   tail-ordered retirement;
+-   reserved hardware resources for higher-priority traffic.
+
+The current variable-size mapping is:
+
+``` text
+p2 high   -> MO9-MO10    ring size 2
+p1 middle -> MO11-MO14   ring size 4
+p0 low    -> MO15-MO18   ring size 4
 ```
 
-The tested architecture is:
+The current experiments have demonstrated:
 
-```text 
-RTEMS CAN stack | +-- p2 -> ring[2] -> MO9/MO10 | +--
-p1 -> ring[1] -> MO11/MO12 | +-- p0 -> ring[0] -> MO13/MO14
-```
+-   same-priority FIFO preservation for p0, p1, and p2;
+-   2000/2000 frames received for each long-run priority test;
+-   zero ordering errors in all three long-run tests;
+-   repeated ring wrap and refill under the tested workload;
+-   low-priority FIFO preservation with a later high-priority arrival;
+-   high-priority bypass using reserved hardware resources;
+-   no need to rearrange low-priority Message Objects in the tested
+    bypass case;
+-   correct behavior with `DCAN_TX_RING_TRACE` disabled.
 
-The current tests have demonstrated:
+A concise description of the architecture is:
 
-```text 
-same-priority FIFO preservation three priority rings
-operating together low-priority FIFO preservation late high-priority
-hardware insertion high-priority bypass of low-priority backlog no need
-to rearrange low-priority Message Objects 
-```
+> The driver maintains an ordered software view over fixed DCAN TX
+> Message Objects for each RTEMS CAN queue priority. Only one Message
+> Object per priority ring is transmission-eligible at a time, while
+> additional occupied Message Objects may cache prefetched frames. This
+> preserves same-priority FIFO order while reserving an independent
+> hardware path for higher-priority traffic.
 
-## 14. Remaining Work
+## 18. Remaining Work
 
-The current implementation is still experimental.
+1.  Repeat the 2000-frame p0, p1, and p2 tests multiple times to check
+    repeatability.
+2.  Run a simultaneous three-priority long-duration stress test using
+    the new `2/4/4` ring sizes.
+3.  Test a p0 backlog followed by a p1 arrival.
+4.  Test a p1 backlog followed by a p2 arrival.
+5.  Consider a changing-CAN-ID test to study interaction between driver
+    priority and CAN bus arbitration.
+6.  Benchmark ring sizes 1, 2, 4, and 8 using more sensitive metrics
+    than total TX time.
+7.  Measure completion-to-next-activation latency and inter-frame gap.
+8.  Keep the one-`ACTIVE`-per-priority invariant while evaluating larger
+    cache windows.
+9.  Remove experimental trace and validation code before upstream
+    submission.
+10. Discuss with mentors whether per-priority Message Object ranges and
+    ring sizes should remain fixed, become configurable, or be
+    simplified for the first upstream version.
 
-Useful next steps:
-
-```text 
-1. Repeat the trace-free tests several times to check stability. 
-2. Repeat the same-priority and three-priority stress tests with the new variable ring sizes. 
-3. Test p0 backlog + p1 arrival. 
-4. Test p1 backlog + p2 arrival. 
-5. Benchmark ring sizes 1, 2, 4, and 8 using total TX time and inter-frame gap. 
-6. Measure whether hardware-side caching reduces completion-to-next-activation latency. 
-7. Keep the one-ACTIVE-per-priority invariant while testing larger cache windows. 
-8. Remove experimental debug code before upstream submission.
-9. Discuss with mentors whether per-priority Message Object ranges and ring sizes should be configurable. 
-```
-
-The current results provide strong functional validation of the
-priority-specific TX ring approach, while the final upstream design
-is one message object for now.
+The current results provide strong functional evidence for the
+priority-specific TX-ring architecture. They should still be described
+as experimental validation rather than as a final upstream scheduling
+policy.
